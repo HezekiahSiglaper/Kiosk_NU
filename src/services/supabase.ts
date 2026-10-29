@@ -14,7 +14,7 @@ export function getSupabase(): SupabaseClient | null {
   if (!url || !key) return null
   _client = createClient(url, key, {
     realtime: { params: { eventsPerSecond: 5 } },
-    auth: { persistSession: false },
+    auth: { persistSession: true },
   })
   return _client
 }
