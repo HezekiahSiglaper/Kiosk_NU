@@ -1,8 +1,16 @@
 import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import type { DisplayEvent, EventType } from '../types/event'
 
 /** Fetches the most recent N events for the Recent Events panel. */
 export async function fetchRecentEvents(limit = 50): Promise<DisplayEvent[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<DisplayEvent[]>({
+      action: 'list_events',
+      limit,
+    })
+    if (rows) return rows
+  }
   const sb = getSupabase()
   if (!sb) return []
   const { data, error } = await sb
@@ -22,6 +30,15 @@ export async function logEvent(
   eventType: EventType,
   opts: { displayId?: string | null; message?: string | null } = {},
 ): Promise<void> {
+  if (isNeonConfigured()) {
+    await callPortalApi({
+      action: 'log_event',
+      event_type: eventType,
+      display_id: opts.displayId ?? null,
+      message: opts.message ?? null,
+    })
+    return
+  }
   const sb = getSupabase()
   if (!sb) return
   const { error } = await sb.from('display_events').insert({

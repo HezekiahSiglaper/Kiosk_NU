@@ -1,9 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isNeonConfigured } from './neon'
 
 /**
  * Single Supabase client used everywhere in the app.
  * Returns null if the env vars are missing — in that case the dashboard
- * falls back to local URL-polling so it still runs in dev / Phase 1.
+ * uses Neon (`/api/portal`) or falls back to local URL-polling.
  */
 let _client: SupabaseClient | null = null
 
@@ -20,6 +21,9 @@ export function getSupabase(): SupabaseClient | null {
 }
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(import.meta.env.VITE_SUPABASE_URL) &&
-         Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY)
+  return (
+    isNeonConfigured() ||
+    (Boolean(import.meta.env.VITE_SUPABASE_URL) &&
+      Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY))
+  )
 }

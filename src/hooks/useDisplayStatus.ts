@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getSupabase } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { fetchDisplays, writeHeartbeat } from '../services/displays'
 import { logEvent } from '../services/events'
 import type { Display } from '../types/display'
@@ -11,19 +12,6 @@ import type { Display } from '../types/display'
  */
 const OFFLINE_AFTER_MS = 90_000
 
-/**
- * The single source of truth for display state in the dashboard.
- *
- * Phase 2 architecture:
- * - Subscribes to Supabase Realtime on the `displays` table
- *   (postgres_changes on INSERT / UPDATE / DELETE)
- * - As a fallback when Supabase isn't configured, runs the local
- *   HEAD probe at 30s intervals and writes the result into the
- *   local React state
- *
- * Returns the full list of displays plus a `lastUpdated` ISO string
- * so the UI can show "Last updated: just now" in the global banner.
- */
 export function useDisplayStatus() {
   const [displays, setDisplays] = useState<Display[]>([])
   const [lastUpdated, setLastUpdated] = useState<string>(new Date().toISOString())
@@ -32,6 +20,29 @@ export function useDisplayStatus() {
   useEffect(() => {
     const sb = getSupabase()
     let cancelled = false
+
+    if (isNeonConfigured()) {
+      const loadNeon = () => {
+        fetchDisplays()
+          .then((rows) => {
+            if (cancelled) return
+            setDisplays(rows)
+            setLastUpdated(new Date().toISOString())
+            setReady(true)
+          })
+          .catch((err) => {
+            if (cancelled) return
+            console.warn('Neon fetchDisplays failed', err)
+            setReady(true)
+          })
+      }
+      loadNeon()
+      const id = setInterval(loadNeon, 20_000)
+      return () => {
+        cancelled = true
+        clearInterval(id)
+      }
+    }
 
     // ----- Initial fetch + Realtime subscription (when Supabase is up) -----
     if (sb) {
@@ -76,19 +87,15 @@ export function useDisplayStatus() {
 
   // Periodically re-evaluate offline status from last_seen (every 10s).
   useEffect(() => {
-    if (!ready) return
+    if (!ready || isNeonConfigured()) return
     const id = setInterval(() => {
       setDisplays((prev) => prev.map(recomputeStatus))
     }, 10_000)
     return () => clearInterval(id)
   }, [ready])
 
-  // When Supabase is not configured, run the local probe in the
-  // background and write the results both to local state and to
-  // Supabase (if/when it becomes configured). This keeps Phase 1
-  // behaviour alive during development.
   useEffect(() => {
-    if (getSupabase()) return
+    if (getSupabase() || isNeonConfigured()) return
     const id = setInterval(async () => {
       const updated = await probeAllLocal(displays)
       setDisplays(updated)

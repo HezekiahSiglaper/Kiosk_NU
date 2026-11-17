@@ -1,4 +1,5 @@
 import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import {
   DEFAULT_KIOSK_OWNERS,
   type KioskOwnerProfile,
@@ -37,6 +38,15 @@ function saveLocalOwners(owners: StoredOwnerRecord[]): void {
 }
 
 export async function fetchAllKioskOwners(): Promise<KioskOwnerProfile[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<KioskOwnerProfile[]>({
+      action: 'list_owners',
+    })
+    if (rows && rows.length > 0) {
+      return rows
+    }
+  }
+
   const sb = getSupabase()
   if (sb) {
     const { data, error } = await sb
@@ -74,10 +84,7 @@ export function saveSessionProfile(profile: KioskOwnerProfile | null): void {
 
 /**
  * Signs in with email + password.
- * 1. If Supabase is configured, attempts `sb.auth.signInWithPassword` first and looks up
- *    the user's row in `public.kiosk_owners`.
- * 2. Also supports the seeded Northwest University accounts so staff/evaluators can test
- *    every role immediately in Local Mode or before Supabase Auth users are provisioned.
+ * Checks Neon (`public.kiosk_owners`), Supabase, or the seeded Northwest University accounts.
  */
 export async function signInWithEmailPassword(
   email: string,
@@ -86,6 +93,29 @@ export async function signInWithEmailPassword(
   const normalizedEmail = email.trim().toLowerCase()
   if (!normalizedEmail || !password) {
     return { user: null, error: 'Please enter both your email address and password.' }
+  }
+
+  if (isNeonConfigured()) {
+    const neonOwners = await callPortalApi<KioskOwnerProfile[]>({
+      action: 'list_owners',
+    })
+    const neonMatch = neonOwners?.find(
+      (o) => o.email.toLowerCase() === normalizedEmail,
+    )
+    if (neonMatch) {
+      const localMatch = loadLocalOwners().find(
+        (o) => o.email.toLowerCase() === normalizedEmail,
+      )
+      const expectedPass = localMatch?.demoPassword || 'Northwest2026!'
+      if (password !== expectedPass) {
+        return {
+          user: null,
+          error: 'Invalid password for this account. Please try again.',
+        }
+      }
+      saveSessionProfile(neonMatch)
+      return { user: neonMatch, error: null }
+    }
   }
 
   const sb = getSupabase()
@@ -151,7 +181,7 @@ export async function assignKioskToOwner(
   displayId: string,
   newOwnerId: string,
 ): Promise<KioskOwnerProfile[]> {
-  const current = loadLocalOwners()
+  const current = await fetchAllKioskOwners()
   const updated = current.map((owner) => {
     if (owner.role === 'super_admin') return owner
     const withoutDisplay = owner.assigned_displays.filter((d) => d !== displayId)
@@ -167,7 +197,15 @@ export async function assignKioskToOwner(
     }
   })
 
-  saveLocalOwners(updated)
+  if (isNeonConfigured()) {
+    for (const owner of updated) {
+      if (owner.role === 'super_admin') continue
+      await callPortalApi({
+        action: 'upsert_owner',
+        owner,
+      })
+    }
+  }
 
   const sb = getSupabase()
   if (sb) {
@@ -183,7 +221,8 @@ export async function assignKioskToOwner(
     }
   }
 
-  return updated.map(({ demoPassword: _, ...profile }) => profile)
+  saveLocalOwners(updated)
+  return updated
 }
 
 export async function createOrUpdateKioskOwner(input: {
@@ -226,6 +265,20 @@ export async function createOrUpdateKioskOwner(input: {
     next.push(record)
   }
   saveLocalOwners(next)
+
+  if (isNeonConfigured()) {
+    await callPortalApi({
+      action: 'upsert_owner',
+      owner: {
+        email: record.email,
+        full_name: record.full_name,
+        department: record.department,
+        role: record.role,
+        assigned_displays: record.assigned_displays,
+      },
+    })
+    return fetchAllKioskOwners()
+  }
 
   const sb = getSupabase()
   if (sb) {

@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { getSupabase } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { fetchRecentCommands } from '../services/commands'
 import type { DisplayCommand } from '../types/command'
 
 /**
- * Live list of recent display commands. Subscribes to Supabase Realtime
- * INSERTs on `display_commands` so the history updates without a refresh.
- * Falls back to one-shot polling when Supabase isn't configured.
+ * Live list of recent display commands.
  */
 export function useDisplayCommands(limit = 30) {
   const [commands, setCommands] = useState<DisplayCommand[]>([])
@@ -15,11 +14,29 @@ export function useDisplayCommands(limit = 30) {
     const sb = getSupabase()
     let cancelled = false
 
-    if (sb) {
+    const load = () => {
       fetchRecentCommands(limit)
-        .then((rows) => { if (!cancelled) setCommands(rows) })
-        .catch((err) => { if (!cancelled) console.warn('fetchRecentCommands failed', err) })
+        .then((rows) => {
+          if (!cancelled) setCommands(rows)
+        })
+        .catch((err) => {
+          if (!cancelled) console.warn('fetchRecentCommands failed', err)
+        })
+    }
 
+    if (isNeonConfigured()) {
+      load()
+      window.addEventListener('nu-commands-updated', load)
+      const id = setInterval(load, 20_000)
+      return () => {
+        cancelled = true
+        window.removeEventListener('nu-commands-updated', load)
+        clearInterval(id)
+      }
+    }
+
+    if (sb) {
+      load()
       const channel = sb
         .channel('commands-changes')
         .on(
@@ -54,14 +71,8 @@ export function useDisplayCommands(limit = 30) {
       }
     }
 
-    // No Supabase: poll occasionally for the history (best-effort).
-    const id = setInterval(() => {
-      if (cancelled) return
-      setCommands((prev) => prev) // no-op when no source
-    }, 30_000)
     return () => {
       cancelled = true
-      clearInterval(id)
     }
   }, [limit])
 

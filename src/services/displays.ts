@@ -1,16 +1,16 @@
 import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import { EMPTY_ROSTER, type Display } from '../types/display'
 
 /**
- * Fetches all displays from Supabase. Returns an empty roster when
- * Supabase isn't configured so the dashboard still mounts cleanly
- * during dev / Phase 1.
- *
- * In production, displays are managed in the Supabase dashboard
- * (or via the SQL editor running 002_seed.sql). This is the
- * single source of truth.
+ * Fetches all displays from Neon Postgres (`/api/portal`) or Supabase.
+ * Falls back to `EMPTY_ROSTER` when neither is configured.
  */
 export async function fetchDisplays(): Promise<Display[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<Display[]>({ action: 'list_displays' })
+    if (rows && rows.length > 0) return rows
+  }
   const sb = getSupabase()
   if (!sb) return EMPTY_ROSTER
   const { data, error } = await sb.from('displays').select('*').order('name')
@@ -22,14 +22,16 @@ export async function fetchDisplays(): Promise<Display[]> {
 }
 
 /**
- * Updates the heartbeat / status fields for a single display. Used by
- * the local probe fallback when Supabase is configured but the display
- * client is not yet integrated (Phase 3).
+ * Updates the heartbeat / status fields for a single display.
  */
 export async function writeHeartbeat(
   id: string,
   fields: Partial<Display>,
 ): Promise<void> {
+  if (isNeonConfigured()) {
+    await callPortalApi({ action: 'heartbeat', id, fields })
+    return
+  }
   const sb = getSupabase()
   if (!sb) return
   const { error } = await sb.from('displays').update(fields).eq('id', id)

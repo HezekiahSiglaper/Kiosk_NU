@@ -1,4 +1,5 @@
 import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import {
   INITIAL_SEED_CONTENT,
   type ContentStatus,
@@ -34,7 +35,32 @@ function saveLocalItems(items: KioskContentItem[]): void {
   }
 }
 
+let _seedPromise: Promise<KioskContentItem[]> | null = null
+
 export async function fetchKioskContent(): Promise<KioskContentItem[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<KioskContentItem[]>({ action: 'list_content' })
+    if (rows) {
+      if (rows.length > 0) return rows
+      if (!_seedPromise) {
+        _seedPromise = (async () => {
+          const seeded: KioskContentItem[] = []
+          for (const seed of INITIAL_SEED_CONTENT) {
+            const created = await callPortalApi<KioskContentItem>({
+              action: 'create_content',
+              item: seed,
+            })
+            if (created) seeded.push(created)
+          }
+          return seeded
+        })()
+      }
+      const seeded = await _seedPromise
+      if (seeded.length > 0) return seeded
+      return rows
+    }
+  }
+
   const sb = getSupabase()
   if (sb) {
     const { data, error } = await sb
@@ -73,6 +99,17 @@ export async function createKioskContent(
     updated_at: now,
   }
 
+  if (isNeonConfigured()) {
+    const created = await callPortalApi<KioskContentItem>({
+      action: 'create_content',
+      item: payload,
+    })
+    if (created) {
+      window.dispatchEvent(new CustomEvent('nu-kiosk-content-updated'))
+      return created
+    }
+  }
+
   const sb = getSupabase()
   if (sb) {
     const { data, error } = await sb
@@ -100,6 +137,19 @@ export async function updateKioskContent(
   updates: Partial<KioskContentFormData> | { status: ContentStatus },
 ): Promise<KioskContentItem | null> {
   const now = new Date().toISOString()
+
+  if (isNeonConfigured() && !id.startsWith('local-') && !id.startsWith('seed-')) {
+    const updated = await callPortalApi<KioskContentItem>({
+      action: 'update_content',
+      id,
+      updates,
+    })
+    if (updated) {
+      window.dispatchEvent(new CustomEvent('nu-kiosk-content-updated'))
+      return updated
+    }
+  }
+
   const sb = getSupabase()
   if (sb && !id.startsWith('local-') && !id.startsWith('seed-')) {
     const { data, error } = await sb
@@ -128,6 +178,17 @@ export async function updateKioskContent(
 }
 
 export async function deleteKioskContent(id: string): Promise<void> {
+  if (isNeonConfigured() && !id.startsWith('local-') && !id.startsWith('seed-')) {
+    const res = await callPortalApi<{ ok: boolean }>({
+      action: 'delete_content',
+      id,
+    })
+    if (res?.ok) {
+      window.dispatchEvent(new CustomEvent('nu-kiosk-content-updated'))
+      return
+    }
+  }
+
   const sb = getSupabase()
   if (sb && !id.startsWith('local-') && !id.startsWith('seed-')) {
     const { error } = await sb.from('kiosk_content').delete().eq('id', id)

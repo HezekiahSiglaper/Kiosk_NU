@@ -1,8 +1,16 @@
 import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import type { CommandType, DisplayCommand } from '../types/command'
 
 /** Fetches the most recent N commands across all displays (for the history panel). */
 export async function fetchRecentCommands(limit = 30): Promise<DisplayCommand[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<DisplayCommand[]>({
+      action: 'list_commands',
+      limit,
+    })
+    if (rows) return rows
+  }
   const sb = getSupabase()
   if (!sb) return []
   const { data, error } = await sb
@@ -19,14 +27,25 @@ export async function fetchRecentCommands(limit = 30): Promise<DisplayCommand[]>
 
 /**
  * Insert a new command for a display. Returns the inserted command.
- * Phase 3 will have display clients subscribe to display_commands and
- * execute them; for now this just queues them in the database.
  */
 export async function sendCommand(
   displayId: string,
   command: CommandType,
   payload: Record<string, unknown> = {},
 ): Promise<DisplayCommand> {
+  if (isNeonConfigured()) {
+    const created = await callPortalApi<DisplayCommand>({
+      action: 'send_command',
+      display_id: displayId,
+      command,
+      payload,
+    })
+    if (created) {
+      window.dispatchEvent(new CustomEvent('nu-commands-updated'))
+      return created
+    }
+  }
+
   const res = await fetch('/api/command', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -38,7 +57,7 @@ export async function sendCommand(
   // Vite dev has no /api folder; fall back to the anon client locally.
   if (res.status === 404) {
     const sb = getSupabase()
-    if (!sb) throw new Error('Supabase not configured')
+    if (!sb) throw new Error('Database not configured')
     const { data, error } = await sb
       .from('display_commands')
       .insert({ display_id: displayId, command, payload })

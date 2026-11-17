@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { getSupabase } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { fetchRecentEvents } from '../services/events'
 import type { DisplayEvent } from '../types/event'
 
 /**
- * Live list of recent display events. Subscribes to Supabase Realtime
- * INSERTs on `display_events` so the events panel updates without refresh.
- * Falls back to a one-shot fetch when Supabase isn't configured.
+ * Live list of recent display events.
  */
 export function useDisplayEvents(limit = 50) {
   const [events, setEvents] = useState<DisplayEvent[]>([])
@@ -15,11 +14,27 @@ export function useDisplayEvents(limit = 50) {
     const sb = getSupabase()
     let cancelled = false
 
-    if (sb) {
+    const load = () => {
       fetchRecentEvents(limit)
-        .then((rows) => { if (!cancelled) setEvents(rows) })
-        .catch((err) => { if (!cancelled) console.warn('fetchRecentEvents failed', err) })
+        .then((rows) => {
+          if (!cancelled) setEvents(rows)
+        })
+        .catch((err) => {
+          if (!cancelled) console.warn('fetchRecentEvents failed', err)
+        })
+    }
 
+    if (isNeonConfigured()) {
+      load()
+      const id = setInterval(load, 20_000)
+      return () => {
+        cancelled = true
+        clearInterval(id)
+      }
+    }
+
+    if (sb) {
+      load()
       const channel = sb
         .channel('events-inserts')
         .on(
