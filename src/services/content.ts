@@ -138,12 +138,121 @@ export async function deleteKioskContent(id: string): Promise<void> {
   saveLocalItems(current.filter((item) => item.id !== id))
 }
 
+export type ImageCheckReport = {
+  valid: boolean
+  status: 'pass' | 'warn' | 'error'
+  fileName: string
+  fileSizeText: string
+  dimensionsText: string
+  orientationText: string
+  messages: string[]
+}
+
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB
+const ALLOWED_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+  'image/svg+xml',
+])
+
+function readImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve({ width: img.naturalWidth || 1080, height: img.naturalHeight || 1920 })
+    img.onerror = () => resolve({ width: 0, height: 0 })
+    img.src = dataUrl
+  })
+}
+
 /**
- * Uploads an image file to Supabase Storage (`kiosk-media` bucket) if
- * configured, or encodes a resized data URL so non-technical users can
- * drag & drop posters in any environment with zero configuration.
+ * Validates file type, file size, and inspects image resolution & aspect ratio
+ * before uploading to Supabase Storage (or encoding as a Data URL).
  */
-export async function uploadContentMedia(file: File): Promise<string> {
+export async function validateAndUploadMedia(
+  file: File,
+): Promise<{ url: string | null; report: ImageCheckReport }> {
+  const sizeMb = file.size / (1024 * 1024)
+  const fileSizeText =
+    sizeMb >= 1 ? `${sizeMb.toFixed(2)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`
+
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    return {
+      url: null,
+      report: {
+        valid: false,
+        status: 'error',
+        fileName: file.name,
+        fileSizeText,
+        dimensionsText: '—',
+        orientationText: 'Unsupported Format',
+        messages: [
+          `Unsupported file type (${file.type || 'unknown'}). Please upload a PNG, JPG, WebP, or GIF image.`,
+        ],
+      },
+    }
+  }
+
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return {
+      url: null,
+      report: {
+        valid: false,
+        status: 'error',
+        fileName: file.name,
+        fileSizeText,
+        dimensionsText: '—',
+        orientationText: 'File Too Large',
+        messages: [
+          `File is ${fileSizeText}, which exceeds the 10 MB maximum for kiosk screens. Please export a compressed PNG or JPG.`,
+        ],
+      },
+    }
+  }
+
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error('Failed to read image file'))
+    reader.readAsDataURL(file)
+  })
+
+  const { width, height } = await readImageDimensions(dataUrl)
+  const messages: string[] = []
+  let status: 'pass' | 'warn' = 'pass'
+
+  const ratio = height > 0 ? width / height : 9 / 16
+  const isPortrait = height >= width
+  const isCloseTo9x16 = Math.abs(ratio - 9 / 16) <= 0.12
+
+  if (!isPortrait) {
+    status = 'warn'
+    messages.push(
+      `Landscape image detected (${width}×${height}). Campus kiosks are vertical (1080×1920, 9:16), so edges may be cropped or letterboxed.`,
+    )
+  } else if (!isCloseTo9x16) {
+    status = 'warn'
+    messages.push(
+      `Portrait image (${width}×${height}) differs slightly from the standard 9:16 (1080×1920) kiosk ratio.`,
+    )
+  } else {
+    messages.push('✓ Aspect ratio matches 9:16 vertical kiosk screen.')
+  }
+
+  if (width > 0 && width < 720) {
+    status = 'warn'
+    messages.push(
+      `Low resolution (${width}×${height}px). 1080×1920px is recommended for sharp text on 55" kiosk displays.`,
+    )
+  } else if (width >= 720) {
+    messages.push(`✓ High-definition resolution (${width}×${height}px).`)
+  }
+
+  messages.push(`✓ File size & format verified (${fileSizeText}).`)
+
+  let finalUrl = dataUrl
   const sb = getSupabase()
   if (sb) {
     const ext = file.name.split('.').pop() || 'png'
@@ -153,17 +262,30 @@ export async function uploadContentMedia(file: File): Promise<string> {
       .upload(safePath, file, { upsert: true })
     if (!error) {
       const { data } = sb.storage.from('kiosk-media').getPublicUrl(safePath)
-      if (data?.publicUrl) return data.publicUrl
+      if (data?.publicUrl) finalUrl = data.publicUrl
     }
   }
 
-  // Fallback: read as Data URL
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(new Error('Failed to read image file'))
-    reader.readAsDataURL(file)
-  })
+  return {
+    url: finalUrl,
+    report: {
+      valid: true,
+      status,
+      fileName: file.name,
+      fileSizeText,
+      dimensionsText: width > 0 ? `${width}×${height}px` : 'Vector / SVG',
+      orientationText: isPortrait ? '9:16 Portrait' : 'Landscape',
+      messages,
+    },
+  }
+}
+
+export async function uploadContentMedia(file: File): Promise<string> {
+  const { url, report } = await validateAndUploadMedia(file)
+  if (!url) {
+    throw new Error(report.messages[0] || 'Invalid image file')
+  }
+  return url
 }
 
 export type ScheduleState = 'active' | 'scheduled' | 'expired'
@@ -181,4 +303,3 @@ export function getScheduleState(
   }
   return 'active'
 }
-
