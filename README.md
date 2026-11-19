@@ -20,7 +20,7 @@ A web portal and operations center for **Northwest University** campus digital s
 - **2-tier role model**:
   - `super_admin` — Full control across all 10 campus kiosks and access to reassign kiosk ownership.
   - `kiosk_owner` — Direct publishing rights to their assigned kiosks; slides targeting another department's kiosk automatically enter the `pending_review` approval queue.
-- **Kiosk Owners Directory & Assignment Modal** ([`src/components/KioskOwnersModal.tsx`](src/components/KioskOwnersModal.tsx)) for viewing and reassigning kiosk ownership.
+- **Kiosk Owners Directory & Assignment Modal** ([`src/components/KioskOwnersModal.tsx`](src/components/KioskOwnersModal.tsx)) for viewing owners; Super Admins can also **create new staff owner accounts** and reassign kiosk ownership across all 10 displays.
 
 ### 2. Kiosk Content Portal (`/portal`)
 - **4 Layout-Protected Campus Templates** ([`src/pages/ContentPortalPage.tsx`](src/pages/ContentPortalPage.tsx)):
@@ -32,9 +32,12 @@ A web portal and operations center for **Northwest University** campus digital s
 - **Built-In Image Upload Checks & Optimization** (`validateAndUploadMedia` in [`src/services/content.ts`](src/services/content.ts)):
   - Verifies supported formats (`PNG`, `JPG`, `WebP`, `GIF`, `SVG`) and enforces a **10 MB** max file size.
   - Inspects pixel dimensions and checks alignment against the **`9:16` vertical kiosk aspect ratio** (`1080×1920` recommended), then automatically resizes (`1080×1920` max) and compresses raster uploads to WebP/JPEG for fast Neon Postgres storage.
+- **Paste Link / URL Import**: Third creation tab (`Paste Link`) supporting Canva share links, Google Slides URLs, and direct external image/web URLs.
 - **Publishing Schedule & Moderation**:
   - **Go-Live Date (`start_date`)** and **Take-Down Date (`end_date`)** controls plus per-slide rotation duration (`10s`, `15s`, `20s`, `30s`).
   - Automatic schedule state evaluation (`active`, `scheduled`, `expired`) and approval actions for `pending_review` slides.
+  - **Split Publishing** (`Publish to My Kiosk(s) & Request Others`): When targeting both owned and unowned displays at once, publishes owned targets immediately and submits unowned targets to `pending_review`.
+  - **Queue Filtering, Quick Actions & Auto-Reload**: Filter slides by `★ Only My Kiosks`, target building screen, or approval status; manage slides with **Approve**, **Take Down**, **Schedule / Edit**, and **Delete**; and automatically dispatch a `reload` command to targeted displays whenever a slide is published.
 - **Live Kiosk Playlist Simulator** ([`src/components/KioskPlaylistModal.tsx`](src/components/KioskPlaylistModal.tsx)): Interactive full-rotation preview filtered by any campus kiosk or all screens, strictly showing currently `active` published slides (excluding future-scheduled and expired slides).
 
 ### 3. Campus Displays Operations Center (`/admin/displays`)
