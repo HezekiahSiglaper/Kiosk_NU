@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { handlePortalAction } from './portal.js'
 
 const ALLOWED = new Set([
   'reload',
@@ -17,34 +17,24 @@ export default async function handler(req, res) {
     return
   }
 
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY
-  if (!url || !key) {
-    res.status(503).json({ error: 'Admin write not configured' })
-    return
-  }
-
   const { display_id, command, payload } = req.body || {}
   if (!display_id || typeof display_id !== 'string' || !ALLOWED.has(command)) {
     res.status(400).json({ error: 'Invalid command' })
     return
   }
 
-  const sb = createClient(url, key, { auth: { persistSession: false } })
-  const { data, error } = await sb
-    .from('display_commands')
-    .insert({
-      display_id,
-      command,
-      payload: payload && typeof payload === 'object' ? payload : {},
-    })
-    .select('*')
-    .single()
-
-  if (error) {
-    res.status(500).json({ error: error.message })
-    return
+  try {
+    const result = await handlePortalAction(
+      {
+        action: 'send_command',
+        display_id,
+        command,
+        payload: payload && typeof payload === 'object' ? payload : {},
+      },
+      process.env.DATABASE_URL,
+    )
+    res.status(result.status).json(result.data)
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
   }
-  res.status(200).json(data)
 }

@@ -6,7 +6,7 @@ import { DisplayCard } from '../components/DisplayCard'
 import { SecurityEventsPanel } from '../components/SecurityEventsPanel'
 import { Button } from '../components/Button'
 import { IconRefresh } from '../components/icons'
-import { isSupabaseConfigured } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import type { Display } from '../types/display'
 
 export default function DisplaysPage() {
@@ -30,7 +30,7 @@ export default function DisplaysPage() {
     return { online, offline, checking, avgRt, total: displays.length }
   }, [displays])
 
-  const supabaseReady = isSupabaseConfigured()
+  const neonReady = isNeonConfigured()
 
   return (
     <div className="flex flex-col gap-8">
@@ -47,7 +47,7 @@ export default function DisplaysPage() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            {!supabaseReady && (
+            {!neonReady && (
               <span className="nu-pill border-nu-amber/40 bg-nu-amber/10 text-nu-amber">
                 <span className="w-1.5 h-1.5 rounded-full bg-nu-amber" />
                 Local mode
@@ -95,7 +95,7 @@ export default function DisplaysPage() {
       <section>
         <SectionHeader title="Display Monitoring" />
         {ready && displays.length === 0 ? (
-          <EmptyState supabaseReady={supabaseReady} />
+          <EmptyState neonReady={neonReady} />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {displays.map((d) => (
@@ -245,20 +245,20 @@ function SectionHeader({ title }: { title: string }) {
 }
 
 function EmptyState({
-  supabaseReady,
-}: { supabaseReady: boolean }) {
+  neonReady,
+}: { neonReady: boolean }) {
   return (
     <div className="nu-card p-10 text-center">
       <div className="nu-eyebrow">No displays yet</div>
       <h3 className="font-serif text-[24px] text-nu-wisp mt-3">
-        {supabaseReady
-          ? 'No displays registered in Supabase.'
-          : 'Connect Supabase to start monitoring displays.'}
+        {neonReady
+          ? 'No displays registered in Neon Postgres.'
+          : 'Connect Neon Postgres to start monitoring displays.'}
       </h3>
       <p className="text-[13px] text-nu-skylight mt-3 max-w-md mx-auto">
-        {supabaseReady
-          ? 'Add displays by inserting rows in the `displays` table. New rows appear in the dashboard immediately via Realtime.'
-          : 'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env, then run the SQL migrations in supabase/migrations/ to enable cloud sync.'}
+        {neonReady
+          ? 'Add displays by running 2-sample-data.sql or inserting rows in the `displays` table in your Neon SQL Editor.'
+          : 'Set DATABASE_URL in .env, then run 1-schema.sql and 2-sample-data.sql in the Neon SQL Editor to enable cloud sync.'}
       </p>
     </div>
   )
@@ -277,7 +277,7 @@ function EventsPanel({
       <SectionHeader title="Recent Events" />
       {events.length === 0 ? (
         <div className="text-[13px] text-nu-skylight/60 py-8 text-center">
-          No events yet. Configure Supabase to start logging display activity.
+          No events yet. Configure Neon Postgres in .env to start logging display activity.
         </div>
       ) : (
         <ul className="divide-y divide-white/5 max-h-[420px] overflow-y-auto">

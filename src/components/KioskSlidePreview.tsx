@@ -73,7 +73,6 @@ function formatReadableDate(raw: string | null | undefined): string {
 function isImageSource(url: string): boolean {
   if (!url) return false
   if (url.startsWith('data:image')) return true
-  if (url.includes('supabase.co/storage')) return true
   return /\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i.test(url)
 }
 

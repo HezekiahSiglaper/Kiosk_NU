@@ -8,8 +8,7 @@ A web portal and operations center for **Northwest University** campus digital s
 
 - **Vite 5** + **React 18** + **TypeScript** (`strict`)
 - **Tailwind CSS 3** with custom Northwest University color tokens
-- **Neon Postgres** (primary backend over HTTPS port `443` via `api/portal.js` & `vite.config.ts` dev middleware)
-- **Supabase** (`@supabase/supabase-js`) optional Realtime backend + **`localStorage` fallback**
+- **Neon Postgres** (backend over HTTPS port `443` via `api/portal.js` & `vite.config.ts` dev middleware, with `localStorage` offline fallback)
 - **React Router 6** (`/login`, `/portal`, `/admin/content`, `/admin/displays`)
 
 ---
@@ -52,11 +51,11 @@ npm run dev          # http://localhost:5173 (redirects / -> /portal or /login)
 npm run build        # runs tsc -b && vite build -> dist/
 ```
 
-If neither Neon (`DATABASE_URL`) nor Supabase (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`) is configured, the Content Portal persists slides and demo staff rosters in `localStorage` and the Displays view runs in **Local mode** (client-side HEAD probe fallback).
+If Neon (`DATABASE_URL`) is not configured in `.env`, the Content Portal persists slides and demo staff rosters in `localStorage` and the Displays view runs in **Local mode** (client-side HEAD probe fallback).
 
 ---
 
-## Configure Neon Postgres (Primary Backend)
+## Configure Neon Postgres
 
 This project connects to Neon over **HTTPS (`https://<host>/sql`, port `443`)** with zero extra database driver packages, so it works on campus networks where PostgreSQL port `5432` is blocked.
 
@@ -70,14 +69,11 @@ This project connects to Neon over **HTTPS (`https://<host>/sql`, port `443`)** 
    - `2-sample-data.sql` — seeds sample displays, commands, events, and the 6 Northwest University staff accounts.
 4. Start or restart the dev server (`npm run dev`). Vite loads `DATABASE_URL` in `vite.config.ts`, exposes `import.meta.env.VITE_NEON_CONFIGURED`, and mounts `/api/portal` and `/api/command` using `api/portal.js`.
 
-### Optional: Supabase Configuration
-You can also connect to Supabase by setting `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env` and running the migrations in `supabase/migrations/` (`001_init.sql` through `014_auth_and_kiosk_owners.sql`). When `VITE_NEON_CONFIGURED` is active, services query `/api/portal` first and fall back to Supabase or `localStorage`.
-
 ---
 
 ## Demo Staff Accounts
 
-Defined in `src/types/auth.ts` (`DEFAULT_KIOSK_OWNERS`) and seeded in `2-sample-data.sql` / `supabase/migrations/014_auth_and_kiosk_owners.sql` (also selectable directly on `/login` for testing):
+Defined in `src/types/auth.ts` (`DEFAULT_KIOSK_OWNERS`) and seeded in `2-sample-data.sql` (also selectable directly on `/login` for testing):
 
 | Name | Email | Role | Assigned Kiosks | Demo Password |
 |------|-------|------|-----------------|---------------|
@@ -99,8 +95,7 @@ vite.config.ts               — Vite 5 config + /api/portal & /api/command dev 
 api/
   portal.js                  — Serverless & dev handler (`handlePortalAction` via Neon HTTPS SQL API)
   portal.d.ts                — TypeScript declaration for api/portal.js
-  command.js                 — Legacy Vercel command route
-supabase/migrations/         — SQL migrations 001_init.sql through 014_auth_and_kiosk_owners.sql
+  command.js                 — Vercel command route forwarding to Neon (`handlePortalAction`)
 src/
   App.tsx                    — Routes (/login, /portal, /admin/content, /admin/displays)
   context/
@@ -135,15 +130,14 @@ src/
     events.ts                — `fetchRecentEvents()`, `logEvent()`
     alerts.ts                — Security event/alert queries
     heartbeat.ts             — Display heartbeat helpers
-    supabase.ts              — Optional Supabase client + `isSupabaseConfigured()`
   hooks/
-    useKioskContent.ts       — Content slides state & Neon/Supabase/local sync
-    useDisplayStatus.ts      — Display polling (Neon/probe) & Supabase Realtime
-    useDisplayCommands.ts    — Command history polling & Realtime
-    useDisplayEvents.ts      — Event log polling & Realtime
+    useKioskContent.ts       — Content slides state & Neon/local sync
+    useDisplayStatus.ts      — Display polling (Neon & local probe fallback)
+    useDisplayCommands.ts    — Command history polling
+    useDisplayEvents.ts      — Event log polling
     useDisplayHeartbeat.ts   — Display heartbeat hook
     useDisplayHeartbeatSimulator.ts — Local heartbeat simulator
-    useSecurityEvents.ts     — Security events hook
+    useSecurityEvents.ts     — Security events polling hook
   types/
     auth.ts                  — `UserRole`, `KioskOwnerProfile`, `DEFAULT_KIOSK_OWNERS`
     content.ts               — `KioskContentItem`, `DEFAULT_CAMPUS_DISPLAYS`, `INITIAL_SEED_CONTENT`

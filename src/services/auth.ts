@@ -1,4 +1,3 @@
-import { getSupabase } from './supabase'
 import { callPortalApi, isNeonConfigured } from './neon'
 import {
   DEFAULT_KIOSK_OWNERS,
@@ -46,17 +45,6 @@ export async function fetchAllKioskOwners(): Promise<KioskOwnerProfile[]> {
       return rows
     }
   }
-
-  const sb = getSupabase()
-  if (sb) {
-    const { data, error } = await sb
-      .from('kiosk_owners')
-      .select('*')
-      .order('full_name', { ascending: true })
-    if (!error && data && data.length > 0) {
-      return data as KioskOwnerProfile[]
-    }
-  }
   return loadLocalOwners().map(({ demoPassword: _, ...profile }) => profile)
 }
 
@@ -84,7 +72,7 @@ export function saveSessionProfile(profile: KioskOwnerProfile | null): void {
 
 /**
  * Signs in with email + password.
- * Checks Neon (`public.kiosk_owners`), Supabase, or the seeded Northwest University accounts.
+ * Checks Neon (`public.kiosk_owners`) or the seeded Northwest University accounts.
  */
 export async function signInWithEmailPassword(
   email: string,
@@ -118,27 +106,6 @@ export async function signInWithEmailPassword(
     }
   }
 
-  const sb = getSupabase()
-  if (sb) {
-    const { data: authData, error: authErr } = await sb.auth.signInWithPassword({
-      email: normalizedEmail,
-      password,
-    })
-    if (!authErr && authData?.user) {
-      const { data: ownerRow } = await sb
-        .from('kiosk_owners')
-        .select('*')
-        .eq('email', normalizedEmail)
-        .maybeSingle()
-
-      if (ownerRow) {
-        const profile = ownerRow as KioskOwnerProfile
-        saveSessionProfile(profile)
-        return { user: profile, error: null }
-      }
-    }
-  }
-
   // Check local / seeded roster
   const localRoster = loadLocalOwners()
   const match = localRoster.find(
@@ -166,10 +133,6 @@ export async function signInWithEmailPassword(
 }
 
 export async function signOutUser(): Promise<void> {
-  const sb = getSupabase()
-  if (sb) {
-    await sb.auth.signOut().catch(() => {})
-  }
   saveSessionProfile(null)
 }
 
@@ -204,20 +167,6 @@ export async function assignKioskToOwner(
         action: 'upsert_owner',
         owner,
       })
-    }
-  }
-
-  const sb = getSupabase()
-  if (sb) {
-    for (const owner of updated) {
-      if (owner.role === 'super_admin') continue
-      await sb
-        .from('kiosk_owners')
-        .update({
-          assigned_displays: owner.assigned_displays,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('email', owner.email)
     }
   }
 
@@ -278,21 +227,6 @@ export async function createOrUpdateKioskOwner(input: {
       },
     })
     return fetchAllKioskOwners()
-  }
-
-  const sb = getSupabase()
-  if (sb) {
-    await sb.from('kiosk_owners').upsert(
-      {
-        email: record.email,
-        full_name: record.full_name,
-        department: record.department,
-        role: record.role,
-        assigned_displays: record.assigned_displays,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'email' },
-    )
   }
 
   return next.map(({ demoPassword: _, ...profile }) => profile)

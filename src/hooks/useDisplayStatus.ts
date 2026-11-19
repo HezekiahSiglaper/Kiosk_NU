@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { getSupabase } from '../services/supabase'
 import { isNeonConfigured } from '../services/neon'
 import { fetchDisplays, writeHeartbeat } from '../services/displays'
 import { logEvent } from '../services/events'
@@ -18,7 +17,6 @@ export function useDisplayStatus() {
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
-    const sb = getSupabase()
     let cancelled = false
 
     if (isNeonConfigured()) {
@@ -44,41 +42,7 @@ export function useDisplayStatus() {
       }
     }
 
-    // ----- Initial fetch + Realtime subscription (when Supabase is up) -----
-    if (sb) {
-      fetchDisplays()
-        .then((rows) => {
-          if (cancelled) return
-          setDisplays(rows)
-          setLastUpdated(new Date().toISOString())
-          setReady(true)
-        })
-        .catch((err) => {
-          if (cancelled) return
-          console.warn('initial fetchDisplays failed', err)
-          setReady(true)
-        })
-
-      const channel = sb
-        .channel('displays-changes')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'displays' },
-          (payload) => {
-            if (cancelled) return
-            setDisplays((prev) => applyRealtimeChange(prev, payload))
-            setLastUpdated(new Date().toISOString())
-          },
-        )
-        .subscribe()
-
-      return () => {
-        cancelled = true
-        sb.removeChannel(channel)
-      }
-    }
-
-    // ----- Local probe fallback (no Supabase) ----------------------------
+    // ----- Local probe fallback (Neon not configured) ----------------------
     setReady(true)
     return () => {
       cancelled = true
@@ -95,7 +59,7 @@ export function useDisplayStatus() {
   }, [ready])
 
   useEffect(() => {
-    if (getSupabase() || isNeonConfigured()) return
+    if (isNeonConfigured()) return
     const id = setInterval(async () => {
       const updated = await probeAllLocal(displays)
       setDisplays(updated)
@@ -116,26 +80,6 @@ export function useDisplayStatus() {
 /* -------------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------------- */
-
-type ChangePayload = {
-  eventType: 'INSERT' | 'UPDATE' | 'DELETE'
-  new: Display | null
-  old: { id: string } | null
-}
-
-function applyRealtimeChange(prev: Display[], payload: unknown): Display[] {
-  const p = payload as ChangePayload
-  if (p.eventType === 'DELETE') {
-    return prev.filter((d) => d.id !== p.old?.id)
-  }
-  if (!p.new) return prev
-  const incoming = recomputeStatus(p.new)
-  const idx = prev.findIndex((d) => d.id === incoming.id)
-  if (idx === -1) return [...prev, incoming].sort((a, b) => a.name.localeCompare(b.name))
-  const next = prev.slice()
-  next[idx] = incoming
-  return next
-}
 
 /**
  * Re-derives `status` from `last_seen` when no recent heartbeat
@@ -169,7 +113,7 @@ async function probeAllLocal(prev: Display[]): Promise<Display[]> {
         last_seen: lastSeen,
         updated_at: now,
       }
-      // Best-effort write to Supabase (no-op if not configured)
+      // Best-effort write to Neon (no-op if not configured)
       writeHeartbeat(d.id, { status, response_time: responseTime, last_seen: lastSeen })
       if (status !== d.status) {
         logEvent(status === 'online' ? 'display_online' : 'display_offline', {

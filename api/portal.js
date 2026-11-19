@@ -58,7 +58,17 @@ export async function handlePortalAction(body, dbUrl) {
     case 'heartbeat': {
       const { id, fields } = body
       if (!id || !fields) return { status: 200, data: { ok: true } }
-      const allowed = ['status', 'response_time', 'last_seen']
+      const allowed = [
+        'status',
+        'current_page',
+        'current_url',
+        'response_time',
+        'software_version',
+        'last_touch',
+        'is_blackout',
+        'emergency_message',
+        'last_seen',
+      ]
       const sets = ['updated_at = now()']
       const params = []
       for (const k of allowed) {

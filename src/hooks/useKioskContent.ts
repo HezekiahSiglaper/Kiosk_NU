@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getSupabase } from '../services/supabase'
 import {
   createKioskContent,
   deleteKioskContent,
@@ -37,31 +36,11 @@ export function useKioskContent() {
     }
     window.addEventListener('nu-kiosk-content-updated', handleLocalUpdate)
 
-    const sb = getSupabase()
-    if (!sb) {
-      return () => {
-        cancelled = true
-        window.removeEventListener('nu-kiosk-content-updated', handleLocalUpdate)
-      }
-    }
-
-    const channel = sb
-      .channel('kiosk-content-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'kiosk_content' },
-        () => {
-          if (!cancelled) refresh()
-        },
-      )
-      .subscribe()
-
     return () => {
       cancelled = true
       window.removeEventListener('nu-kiosk-content-updated', handleLocalUpdate)
-      sb.removeChannel(channel)
     }
-  }, [refresh])
+  }, [])
 
   const createItem = useCallback(async (form: KioskContentFormData) => {
     const created = await createKioskContent(form)
@@ -100,4 +79,3 @@ export function useKioskContent() {
     removeItem,
   }
 }
-

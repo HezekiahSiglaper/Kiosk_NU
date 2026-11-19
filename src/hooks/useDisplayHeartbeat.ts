@@ -45,7 +45,7 @@ export function useDisplayHeartbeat(
     if (ok) {
       setLastSentAt(new Date().toISOString())
     } else {
-      setError('Heartbeat write failed — check Supabase connection.')
+      setError('Heartbeat write failed — check Neon connection.')
     }
     setSending(false)
     return ok

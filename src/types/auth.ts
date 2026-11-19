@@ -13,7 +13,7 @@ export type KioskOwnerProfile = {
 
 /**
  * Default Northwest University staff accounts seeded for immediate local testing
- * and mirrored in `014_auth_and_kiosk_owners.sql`.
+ * and mirrored in `2-sample-data.sql`.
  */
 export const DEFAULT_KIOSK_OWNERS: (KioskOwnerProfile & { demoPassword: string })[] = [
   {

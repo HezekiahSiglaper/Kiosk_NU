@@ -8,7 +8,7 @@ import {
   type ImageCheckReport,
 } from '../services/content'
 import { sendCommand } from '../services/commands'
-import { isSupabaseConfigured } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { KioskSlidePreview } from '../components/KioskSlidePreview'
 import { KioskPlaylistModal } from '../components/KioskPlaylistModal'
 import { KioskOwnersModal } from '../components/KioskOwnersModal'
@@ -352,7 +352,7 @@ export default function ContentPortalPage() {
         )
       }
 
-      if (effectiveStatus === 'published' && isSupabaseConfigured()) {
+      if (effectiveStatus === 'published' && isNeonConfigured()) {
         const targets = payload.target_displays.includes('all')
           ? campusDisplays.map((d) => d.id)
           : payload.target_displays

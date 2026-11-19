@@ -1,4 +1,3 @@
-import { getSupabase } from './supabase'
 import { callPortalApi, isNeonConfigured } from './neon'
 import {
   INITIAL_SEED_CONTENT,
@@ -61,16 +60,6 @@ export async function fetchKioskContent(): Promise<KioskContentItem[]> {
     }
   }
 
-  const sb = getSupabase()
-  if (sb) {
-    const { data, error } = await sb
-      .from('kiosk_content')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (!error && data) {
-      return data as KioskContentItem[]
-    }
-  }
   return loadLocalItems()
 }
 
@@ -110,18 +99,6 @@ export async function createKioskContent(
     }
   }
 
-  const sb = getSupabase()
-  if (sb) {
-    const { data, error } = await sb
-      .from('kiosk_content')
-      .insert(payload)
-      .select('*')
-      .single()
-    if (!error && data) {
-      return data as KioskContentItem
-    }
-  }
-
   const localItem: KioskContentItem = {
     id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ...payload,
@@ -150,19 +127,6 @@ export async function updateKioskContent(
     }
   }
 
-  const sb = getSupabase()
-  if (sb && !id.startsWith('local-') && !id.startsWith('seed-')) {
-    const { data, error } = await sb
-      .from('kiosk_content')
-      .update({ ...updates, updated_at: now })
-      .eq('id', id)
-      .select('*')
-      .single()
-    if (!error && data) {
-      return data as KioskContentItem
-    }
-  }
-
   const current = loadLocalItems()
   const idx = current.findIndex((item) => item.id === id)
   if (idx === -1) return null
@@ -187,12 +151,6 @@ export async function deleteKioskContent(id: string): Promise<void> {
       window.dispatchEvent(new CustomEvent('nu-kiosk-content-updated'))
       return
     }
-  }
-
-  const sb = getSupabase()
-  if (sb && !id.startsWith('local-') && !id.startsWith('seed-')) {
-    const { error } = await sb.from('kiosk_content').delete().eq('id', id)
-    if (!error) return
   }
 
   const current = loadLocalItems()
@@ -230,7 +188,7 @@ function readImageDimensions(dataUrl: string): Promise<{ width: number; height: 
 
 /**
  * Validates file type, file size, and inspects image resolution & aspect ratio
- * before uploading to Supabase Storage (or encoding as a Data URL).
+ * before encoding as a Data URL for Neon Postgres storage.
  */
 export async function validateAndUploadMedia(
   file: File,
@@ -313,22 +271,8 @@ export async function validateAndUploadMedia(
 
   messages.push(`✓ File size & format verified (${fileSizeText}).`)
 
-  let finalUrl = dataUrl
-  const sb = getSupabase()
-  if (sb) {
-    const ext = file.name.split('.').pop() || 'png'
-    const safePath = `uploads/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-    const { error } = await sb.storage
-      .from('kiosk-media')
-      .upload(safePath, file, { upsert: true })
-    if (!error) {
-      const { data } = sb.storage.from('kiosk-media').getPublicUrl(safePath)
-      if (data?.publicUrl) finalUrl = data.publicUrl
-    }
-  }
-
   return {
-    url: finalUrl,
+    url: dataUrl,
     report: {
       valid: true,
       status,
