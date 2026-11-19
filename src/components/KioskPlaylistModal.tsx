@@ -32,7 +32,7 @@ export function KioskPlaylistModal({
   const playlist = useMemo(() => {
     return items.filter((item) => {
       if (item.status !== 'published') return false
-      if (getScheduleState(item) === 'expired') return false
+      if (getScheduleState(item) !== 'active') return false
       if (selectedDisplay === 'all') return true
       return (
         item.target_displays.includes('all') ||
@@ -113,7 +113,11 @@ export function KioskPlaylistModal({
               }}
               className="w-full rounded-xl bg-nu-midnight/90 border border-white/15 px-3.5 py-2.5 text-sm text-nu-wisp focus:outline-none focus:border-nu-tour"
             >
-              <option value="all">All Campus Kiosks ({items.filter((i) => i.status === 'published').length} published)</option>
+              <option value="all">
+                All Campus Kiosks (
+                {items.filter((i) => i.status === 'published' && getScheduleState(i) === 'active').length}{' '}
+                live now)
+              </option>
               {displays.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name} ({d.location})

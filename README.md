@@ -28,14 +28,14 @@ A web portal and operations center for **Northwest University** campus digital s
   - *Student Club / Campus Event* (`sky`)
   - *Eagle Athletics Game Day* (`navy-gold`)
   - *Faculty / Department Notice* (`evergreen`)
-- **Brand & Layout Guardrails** ([`src/components/KioskSlidePreview.tsx`](src/components/KioskSlidePreview.tsx)): Locked header/footer chrome, locked Northwest University color themes, enforced character caps (`maxLength` on titles, subtitles, body copy, and event fields), and automatic single-path SVG QR code generation from the call-to-action URL.
-- **Built-In Image Upload Checks** (`validateAndUploadMedia` in [`src/services/content.ts`](src/services/content.ts)):
+- **Brand & Layout Guardrails** ([`src/components/KioskSlidePreview.tsx`](src/components/KioskSlidePreview.tsx)): Locked header/footer chrome, locked Northwest University color themes, enforced character caps (`maxLength` on titles, subtitles, body copy, and event fields), and scannable single-path SVG QR codes (powered by `qrcode`) generated from the call-to-action URL.
+- **Built-In Image Upload Checks & Optimization** (`validateAndUploadMedia` in [`src/services/content.ts`](src/services/content.ts)):
   - Verifies supported formats (`PNG`, `JPG`, `WebP`, `GIF`, `SVG`) and enforces a **10 MB** max file size.
-  - Inspects pixel dimensions and checks alignment against the **`9:16` vertical kiosk aspect ratio** (`1080×1920` recommended) before previewing or saving.
+  - Inspects pixel dimensions and checks alignment against the **`9:16` vertical kiosk aspect ratio** (`1080×1920` recommended), then automatically resizes (`1080×1920` max) and compresses raster uploads to WebP/JPEG for fast Neon Postgres storage.
 - **Publishing Schedule & Moderation**:
   - **Go-Live Date (`start_date`)** and **Take-Down Date (`end_date`)** controls plus per-slide rotation duration (`10s`, `15s`, `20s`, `30s`).
   - Automatic schedule state evaluation (`active`, `scheduled`, `expired`) and approval actions for `pending_review` slides.
-- **Live Kiosk Playlist Simulator** ([`src/components/KioskPlaylistModal.tsx`](src/components/KioskPlaylistModal.tsx)): Interactive full-rotation preview filtered by any campus kiosk or all screens.
+- **Live Kiosk Playlist Simulator** ([`src/components/KioskPlaylistModal.tsx`](src/components/KioskPlaylistModal.tsx)): Interactive full-rotation preview filtered by any campus kiosk or all screens, strictly showing currently `active` published slides (excluding future-scheduled and expired slides).
 
 ### 3. Campus Displays Operations Center (`/admin/displays`)
 - Real-time monitoring cards ([`src/pages/DisplaysPage.tsx`](src/pages/DisplaysPage.tsx), [`src/components/DisplayCard.tsx`](src/components/DisplayCard.tsx)) showing display status (`online`, `offline`, `checking`), physical screen snapshots ([`src/components/ScreenshotPanel.tsx`](src/components/ScreenshotPanel.tsx)), security status alerts ([`src/components/SecurityEventsPanel.tsx`](src/components/SecurityEventsPanel.tsx)), recent events, and command history.
@@ -66,7 +66,7 @@ This project connects to Neon over **HTTPS (`https://<host>/sql`, port `443`)** 
    ```
 3. In the **Neon SQL Editor**, run the two setup scripts in order:
    - `1-schema.sql` — creates all 5 tables (`displays`, `display_commands`, `display_events`, `kiosk_content`, `kiosk_owners`), indexes, and `touch_updated_at()` trigger.
-   - `2-sample-data.sql` — seeds sample displays, commands, events, and the 6 Northwest University staff accounts.
+   - `2-sample-data.sql` — seeds all 10 Northwest University campus kiosks, sample commands, events, and the 6 staff accounts.
 4. Start or restart the dev server (`npm run dev`). Vite loads `DATABASE_URL` in `vite.config.ts`, exposes `import.meta.env.VITE_NEON_CONFIGURED`, and mounts `/api/portal` and `/api/command` using `api/portal.js`.
 
 ---
@@ -90,7 +90,7 @@ Defined in `src/types/auth.ts` (`DEFAULT_KIOSK_OWNERS`) and seeded in `2-sample-
 
 ```
 1-schema.sql                 — Neon Postgres schema (5 tables + indexes + trigger)
-2-sample-data.sql            — Neon seed data (sample screens, commands, events, owners)
+2-sample-data.sql            — Neon seed data (all 10 NU campus kiosks, commands, events, owners)
 vite.config.ts               — Vite 5 config + /api/portal & /api/command dev middleware
 api/
   portal.js                  — Serverless & dev handler (`handlePortalAction` via Neon HTTPS SQL API)
@@ -106,8 +106,8 @@ src/
     DisplaysPage.tsx         — Campus Screens operations dashboard
   components/
     Shell.tsx                — Header nav, active user pill, sign-out
-    KioskSlidePreview.tsx    — Protected 9:16 slide preview + single-path SVG QR code
-    KioskPlaylistModal.tsx   — Multi-kiosk live playlist rotation simulator
+    KioskSlidePreview.tsx    — Protected 9:16 slide preview + scannable single-path SVG QR code (`qrcode`)
+    KioskPlaylistModal.tsx   — Multi-kiosk live playlist rotation simulator (active slides only)
     KioskOwnersModal.tsx     — Kiosk owners directory & ownership reassignment
     DisplayCard.tsx          — Display card, health metadata, remote commands
     ScreenshotPanel.tsx      — Live display snapshot viewer

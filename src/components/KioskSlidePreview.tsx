@@ -1,4 +1,5 @@
 import { memo, useMemo } from 'react'
+import QRCode from 'qrcode'
 import { NuMark } from './NuMark'
 import { IconClock, IconExternal, IconImage, IconMapPin } from './icons'
 import type { ContentTheme, KioskContentFormData, KioskContentItem } from '../types/content'
@@ -76,35 +77,42 @@ function isImageSource(url: string): boolean {
   return /\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i.test(url)
 }
 
-const PseudoQrCode = memo(function PseudoQrCode({ value }: { value: string }) {
-  const size = 11
-  const pathData = useMemo(() => {
-    let hash = 2166136261
-    for (let i = 0; i < value.length; i++) {
-      hash ^= value.charCodeAt(i)
-      hash = Math.imul(hash, 16777619)
-    }
-
-    const isFinder = (r: number, c: number) =>
-      (r < 3 && c < 3) || (r < 3 && c >= size - 3) || (r >= size - 3 && c < 3)
-
-    let d = ''
-    for (let r = 0; r < size; r++) {
-      for (let c = 0; c < size; c++) {
-        const on = isFinder(r, c)
-          ? true
-          : (((hash >>> ((r * size + c) % 24)) ^ (r * 7 + c * 13)) & 1) === 1
-        if (on) {
-          d += `M${c},${r}h0.9v0.9h-0.9Z`
+const QrCodeSvg = memo(function QrCodeSvg({ value }: { value: string }) {
+  const { totalSize, pathData } = useMemo(() => {
+    const margin = 2
+    const trimmed = value.trim()
+    if (!trimmed) return { totalSize: 25, pathData: '' }
+    try {
+      const qr = QRCode.create(trimmed, { errorCorrectionLevel: 'M' })
+      const size = qr.modules.size
+      let d = ''
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (qr.modules.get(r, c)) {
+            d += `M${c + margin},${r + margin}h1v1h-1Z`
+          }
         }
       }
+      return { totalSize: size + margin * 2, pathData: d }
+    } catch {
+      return { totalSize: 25, pathData: '' }
     }
-    return d
   }, [value])
 
+  if (!pathData) return null
+
   return (
-    <div className="p-1.5 bg-white rounded-xl inline-block shrink-0">
-      <svg width={46} height={46} viewBox={`0 0 ${size} ${size}`} className="block">
+    <div className="p-1 bg-white rounded-xl inline-block shrink-0">
+      <svg
+        width={56}
+        height={56}
+        viewBox={`0 0 ${totalSize} ${totalSize}`}
+        shapeRendering="crispEdges"
+        className="block"
+        role="img"
+        aria-label={`QR code for ${value}`}
+      >
+        <rect width={totalSize} height={totalSize} fill="#ffffff" />
         <path d={pathData} fill="#00263d" />
       </svg>
     </div>
@@ -347,7 +355,7 @@ export const KioskSlidePreview = memo(function KioskSlidePreview({
                 {slide.cta_url.replace(/^https?:\/\//, '')}
               </div>
             </div>
-            <PseudoQrCode value={slide.cta_url} />
+            <QrCodeSvg value={slide.cta_url} />
           </div>
         ) : (
           <div className="flex items-center justify-between text-[9px] text-nu-skylight/75">

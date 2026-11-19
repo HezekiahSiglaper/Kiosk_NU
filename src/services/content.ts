@@ -186,16 +186,75 @@ function readImageDimensions(dataUrl: string): Promise<{ width: number; height: 
   })
 }
 
+function formatBytes(bytes: number): string {
+  const sizeMb = bytes / (1024 * 1024)
+  return sizeMb >= 1
+    ? `${sizeMb.toFixed(2)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+  const commaIdx = dataUrl.indexOf(',')
+  if (commaIdx === -1) return dataUrl.length
+  return Math.round(((dataUrl.length - commaIdx - 1) * 3) / 4)
+}
+
+function loadHtmlImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = src
+  })
+}
+
+async function compressImageForKiosk(
+  dataUrl: string,
+  mimeType: string,
+): Promise<{ url: string; bytes: number; compressed: boolean }> {
+  const originalBytes = estimateDataUrlBytes(dataUrl)
+  if (mimeType === 'image/svg+xml' || mimeType === 'image/gif') {
+    return { url: dataUrl, bytes: originalBytes, compressed: false }
+  }
+
+  const img = await loadHtmlImage(dataUrl)
+  if (!img || !img.naturalWidth || !img.naturalHeight) {
+    return { url: dataUrl, bytes: originalBytes, compressed: false }
+  }
+
+  const scale = Math.min(1, 1080 / img.naturalWidth, 1920 / img.naturalHeight)
+  const targetW = Math.max(1, Math.round(img.naturalWidth * scale))
+  const targetH = Math.max(1, Math.round(img.naturalHeight * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    return { url: dataUrl, bytes: originalBytes, compressed: false }
+  }
+  ctx.drawImage(img, 0, 0, targetW, targetH)
+
+  let candidate = canvas.toDataURL('image/webp', 0.82)
+  if (!candidate.startsWith('data:image/webp')) {
+    candidate = canvas.toDataURL('image/jpeg', 0.82)
+  }
+
+  const candidateBytes = estimateDataUrlBytes(candidate)
+  if (candidateBytes > 0 && candidateBytes < originalBytes) {
+    return { url: candidate, bytes: candidateBytes, compressed: true }
+  }
+  return { url: dataUrl, bytes: originalBytes, compressed: false }
+}
+
 /**
  * Validates file type, file size, and inspects image resolution & aspect ratio
- * before encoding as a Data URL for Neon Postgres storage.
+ * before compressing and encoding as a Data URL for Neon Postgres storage.
  */
 export async function validateAndUploadMedia(
   file: File,
 ): Promise<{ url: string | null; report: ImageCheckReport }> {
-  const sizeMb = file.size / (1024 * 1024)
-  const fileSizeText =
-    sizeMb >= 1 ? `${sizeMb.toFixed(2)} MB` : `${Math.max(1, Math.round(file.size / 1024))} KB`
+  const fileSizeText = formatBytes(file.size)
 
   if (!ALLOWED_MIME_TYPES.has(file.type)) {
     return {
@@ -271,8 +330,16 @@ export async function validateAndUploadMedia(
 
   messages.push(`✓ File size & format verified (${fileSizeText}).`)
 
+  const { url: optimizedUrl, bytes: optimizedBytes, compressed } =
+    await compressImageForKiosk(dataUrl, file.type)
+  if (compressed) {
+    messages.push(
+      `✓ Auto-optimized for fast Neon & kiosk sync (${formatBytes(optimizedBytes)}).`,
+    )
+  }
+
   return {
-    url: dataUrl,
+    url: optimizedUrl,
     report: {
       valid: true,
       status,
