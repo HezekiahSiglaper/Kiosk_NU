@@ -1,4 +1,4 @@
-import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import { logEvent } from './events'
 import type { Display, DisplayStatus } from '../types/display'
 
@@ -43,9 +43,9 @@ export function deriveStatus(d: Pick<Display, 'last_seen' | 'status'>): DisplayS
 }
 
 /**
- * Sends a single heartbeat update to Supabase. Best-effort:
+ * Sends a single heartbeat update to Neon Postgres. Best-effort:
  * - returns true on success
- * - returns false on any error (logged but not thrown)
+ * - returns false on any error or when Neon is not configured
  *
  * This is the function the display clients will call every
  * 30 seconds once they're integrated. The simulator
@@ -55,20 +55,17 @@ export async function sendHeartbeat(
   displayId: string,
   payload: HeartbeatPayload,
 ): Promise<boolean> {
-  const sb = getSupabase()
-  if (!sb) return false
+  if (!isNeonConfigured()) return false
   const now = new Date().toISOString()
-  const update = {
-    ...payload,
-    last_seen: now,
-    updated_at: now,
-  }
-  const { error } = await sb.from('displays').update(update).eq('id', displayId)
-  if (error) {
-    console.warn('sendHeartbeat error', error)
-    return false
-  }
-  return true
+  const res = await callPortalApi<{ ok: boolean }>({
+    action: 'heartbeat',
+    id: displayId,
+    fields: {
+      ...payload,
+      last_seen: now,
+    },
+  })
+  return Boolean(res?.ok)
 }
 
 /**

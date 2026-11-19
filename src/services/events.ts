@@ -1,33 +1,26 @@
-import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import type { DisplayEvent, EventType } from '../types/event'
 
-/** Fetches the most recent N events for the Recent Events panel. */
+/** Fetches the most recent N events for the Recent Events panel from Neon Postgres. */
 export async function fetchRecentEvents(limit = 50): Promise<DisplayEvent[]> {
-  const sb = getSupabase()
-  if (!sb) return []
-  const { data, error } = await sb
-    .from('display_events')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (error) {
-    console.warn('fetchRecentEvents error', error)
-    return []
-  }
-  return (data ?? []) as DisplayEvent[]
+  if (!isNeonConfigured()) return []
+  const rows = await callPortalApi<DisplayEvent[]>({
+    action: 'list_events',
+    limit,
+  })
+  return rows ?? []
 }
 
-/** Inserts an event row. Best-effort: errors are logged, not thrown. */
+/** Inserts an event row into Neon Postgres. Best-effort: errors are logged, not thrown. */
 export async function logEvent(
   eventType: EventType,
   opts: { displayId?: string | null; message?: string | null } = {},
 ): Promise<void> {
-  const sb = getSupabase()
-  if (!sb) return
-  const { error } = await sb.from('display_events').insert({
+  if (!isNeonConfigured()) return
+  await callPortalApi({
+    action: 'log_event',
     event_type: eventType,
     display_id: opts.displayId ?? null,
     message: opts.message ?? null,
   })
-  if (error) console.warn('logEvent error', error)
 }

@@ -4,7 +4,7 @@ import { Button } from './Button'
 import { IconPower, IconAlert, IconBolt } from './icons'
 import { sendHeartbeatWithEvent } from '../services/heartbeat'
 import { logEvent } from '../services/events'
-import { isSupabaseConfigured } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 
 type Props = {
   display: Display
@@ -33,10 +33,10 @@ type Props = {
 export function DevControls({ display, forceEnable = false }: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   if (import.meta.env.PROD && !forceEnable) return null
-  if (!isSupabaseConfigured()) return null
+  if (!isNeonConfigured()) return null
 
   async function simulateOnline() {
-    if (!confirm(`Set ${display.name} to ONLINE in Supabase? (Development Only)`)) return
+    if (!confirm(`Set ${display.name} to ONLINE in Neon? (Development Only)`)) return
     setBusy('online')
     await sendHeartbeatWithEvent(display.id, display.name, {
       status: 'online',
@@ -48,7 +48,7 @@ export function DevControls({ display, forceEnable = false }: Props) {
     setBusy(null)
   }
   async function simulateOffline() {
-    if (!confirm(`Set ${display.name} to OFFLINE in Supabase? (Development Only)`)) return
+    if (!confirm(`Set ${display.name} to OFFLINE in Neon? (Development Only)`)) return
     setBusy('offline')
     await sendHeartbeatWithEvent(display.id, display.name, {
       status: 'offline',

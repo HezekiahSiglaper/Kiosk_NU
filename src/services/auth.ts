@@ -1,0 +1,234 @@
+import { callPortalApi, isNeonConfigured } from './neon'
+import {
+  DEFAULT_KIOSK_OWNERS,
+  type KioskOwnerProfile,
+  type UserRole,
+} from '../types/auth'
+
+const OWNERS_STORAGE_KEY = 'nu_kiosk_owners_roster_v1'
+const SESSION_STORAGE_KEY = 'nu_kiosk_active_session_v1'
+
+type StoredOwnerRecord = KioskOwnerProfile & { demoPassword?: string }
+
+function loadLocalOwners(): StoredOwnerRecord[] {
+  try {
+    const raw = localStorage.getItem(OWNERS_STORAGE_KEY)
+    if (!raw) {
+      localStorage.setItem(OWNERS_STORAGE_KEY, JSON.stringify(DEFAULT_KIOSK_OWNERS))
+      return DEFAULT_KIOSK_OWNERS
+    }
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed as StoredOwnerRecord[]
+    }
+    return DEFAULT_KIOSK_OWNERS
+  } catch {
+    return DEFAULT_KIOSK_OWNERS
+  }
+}
+
+function saveLocalOwners(owners: StoredOwnerRecord[]): void {
+  try {
+    localStorage.setItem(OWNERS_STORAGE_KEY, JSON.stringify(owners))
+    window.dispatchEvent(new CustomEvent('nu-kiosk-owners-updated'))
+  } catch (err) {
+    console.warn('saveLocalOwners failed', err)
+  }
+}
+
+export async function fetchAllKioskOwners(): Promise<KioskOwnerProfile[]> {
+  if (isNeonConfigured()) {
+    const rows = await callPortalApi<KioskOwnerProfile[]>({
+      action: 'list_owners',
+    })
+    if (rows && rows.length > 0) {
+      return rows
+    }
+  }
+  return loadLocalOwners().map(({ demoPassword: _, ...profile }) => profile)
+}
+
+export function getSavedSessionProfile(): KioskOwnerProfile | null {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as KioskOwnerProfile
+  } catch {
+    return null
+  }
+}
+
+export function saveSessionProfile(profile: KioskOwnerProfile | null): void {
+  try {
+    if (!profile) {
+      localStorage.removeItem(SESSION_STORAGE_KEY)
+    } else {
+      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(profile))
+    }
+  } catch (err) {
+    console.warn('saveSessionProfile error', err)
+  }
+}
+
+/**
+ * Signs in with email + password.
+ * Checks Neon (`public.kiosk_owners`) or the seeded Northwest University accounts.
+ */
+export async function signInWithEmailPassword(
+  email: string,
+  password: string,
+): Promise<{ user: KioskOwnerProfile | null; error: string | null }> {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail || !password) {
+    return { user: null, error: 'Please enter both your email address and password.' }
+  }
+
+  if (isNeonConfigured()) {
+    const neonOwners = await callPortalApi<KioskOwnerProfile[]>({
+      action: 'list_owners',
+    })
+    const neonMatch = neonOwners?.find(
+      (o) => o.email.toLowerCase() === normalizedEmail,
+    )
+    if (neonMatch) {
+      const localMatch = loadLocalOwners().find(
+        (o) => o.email.toLowerCase() === normalizedEmail,
+      )
+      const expectedPass = localMatch?.demoPassword || 'Northwest2026!'
+      if (password !== expectedPass) {
+        return {
+          user: null,
+          error: 'Invalid password for this account. Please try again.',
+        }
+      }
+      saveSessionProfile(neonMatch)
+      return { user: neonMatch, error: null }
+    }
+  }
+
+  // Check local / seeded roster
+  const localRoster = loadLocalOwners()
+  const match = localRoster.find(
+    (o) => o.email.toLowerCase() === normalizedEmail,
+  )
+  if (!match) {
+    return {
+      user: null,
+      error:
+        'No kiosk owner account found for that email. Use your @northwestu.edu account or select a demo account below.',
+    }
+  }
+
+  const expectedPass = match.demoPassword || 'Northwest2026!'
+  if (password !== expectedPass) {
+    return {
+      user: null,
+      error: 'Invalid password for this account. Please try again.',
+    }
+  }
+
+  const { demoPassword: _, ...cleanProfile } = match
+  saveSessionProfile(cleanProfile)
+  return { user: cleanProfile, error: null }
+}
+
+export async function signOutUser(): Promise<void> {
+  saveSessionProfile(null)
+}
+
+/**
+ * Assigns a specific kiosk (`displayId`) to a Kiosk Owner (`ownerId`),
+ * removing it from other non-super-admin owners so each kiosk has a clear designated owner.
+ */
+export async function assignKioskToOwner(
+  displayId: string,
+  newOwnerId: string,
+): Promise<KioskOwnerProfile[]> {
+  const current = await fetchAllKioskOwners()
+  const updated = current.map((owner) => {
+    if (owner.role === 'super_admin') return owner
+    const withoutDisplay = owner.assigned_displays.filter((d) => d !== displayId)
+    if (owner.id === newOwnerId) {
+      return {
+        ...owner,
+        assigned_displays: [...withoutDisplay, displayId],
+      }
+    }
+    return {
+      ...owner,
+      assigned_displays: withoutDisplay,
+    }
+  })
+
+  if (isNeonConfigured()) {
+    for (const owner of updated) {
+      if (owner.role === 'super_admin') continue
+      await callPortalApi({
+        action: 'upsert_owner',
+        owner,
+      })
+    }
+  }
+
+  saveLocalOwners(updated)
+  return updated
+}
+
+export async function createOrUpdateKioskOwner(input: {
+  email: string
+  full_name: string
+  department: string
+  role: UserRole
+  assigned_displays: string[]
+  password?: string
+}): Promise<KioskOwnerProfile[]> {
+  const normalizedEmail = input.email.trim().toLowerCase()
+  const current = loadLocalOwners()
+  const existingIdx = current.findIndex(
+    (o) => o.email.toLowerCase() === normalizedEmail,
+  )
+
+  const record: StoredOwnerRecord = {
+    id:
+      existingIdx >= 0
+        ? current[existingIdx].id
+        : `owner-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    email: normalizedEmail,
+    full_name: input.full_name.trim(),
+    department: input.department.trim() || 'Campus Staff',
+    role: input.role,
+    assigned_displays: input.assigned_displays,
+    demoPassword:
+      input.password?.trim() ||
+      (existingIdx >= 0 ? current[existingIdx].demoPassword : 'Northwest2026!'),
+    created_at:
+      existingIdx >= 0
+        ? current[existingIdx].created_at
+        : new Date().toISOString(),
+  }
+
+  const next = current.slice()
+  if (existingIdx >= 0) {
+    next[existingIdx] = record
+  } else {
+    next.push(record)
+  }
+  saveLocalOwners(next)
+
+  if (isNeonConfigured()) {
+    await callPortalApi({
+      action: 'upsert_owner',
+      owner: {
+        email: record.email,
+        full_name: record.full_name,
+        department: record.department,
+        role: record.role,
+        assigned_displays: record.assigned_displays,
+      },
+    })
+    return fetchAllKioskOwners()
+  }
+
+  return next.map(({ demoPassword: _, ...profile }) => profile)
+}
+

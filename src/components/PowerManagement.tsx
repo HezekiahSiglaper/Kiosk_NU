@@ -3,7 +3,7 @@ import type { Display } from '../types/display'
 import type { CommandType } from '../types/command'
 import { sendCommand } from '../services/commands'
 import { logEvent } from '../services/events'
-import { isSupabaseConfigured } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { IconPower, IconBolt } from './icons'
 
 /**
@@ -59,7 +59,7 @@ export function PowerManagement({ display, lastPowerCommand, onCommandSent }: Pr
   const [error, setError] = useState<string | null>(null)
   const [cooldownUntil, setCooldownUntil] = useState<number>(0)
   const [now, setNow] = useState(Date.now())
-  const supabaseReady = isSupabaseConfigured()
+  const neonReady = isNeonConfigured()
 
   // Tick the cooldown timer so the "Try again in Ns" label updates.
   useEffect(() => {
@@ -98,8 +98,8 @@ export function PowerManagement({ display, lastPowerCommand, onCommandSent }: Pr
     : null
 
   async function send(cmd: PowerAction) {
-    if (!supabaseReady) {
-      window.alert('Supabase not configured.')
+    if (!neonReady) {
+      window.alert('Neon database not configured. Set DATABASE_URL in .env.')
       return
     }
     if (inCooldown) return
@@ -133,10 +133,10 @@ export function PowerManagement({ display, lastPowerCommand, onCommandSent }: Pr
   }
 
   const turnOffDisabled =
-    !supabaseReady || inCooldown || status === 'sending' || status === 'executing'
+    !neonReady || inCooldown || status === 'sending' || status === 'executing'
   // Power On is ONLY enabled when the display is offline.
   const turnOnDisabled =
-    !supabaseReady || inCooldown || status === 'sending' || status === 'executing' || !isOffline
+    !neonReady || inCooldown || status === 'sending' || status === 'executing' || !isOffline
 
   return (
     <section
@@ -179,7 +179,7 @@ export function PowerManagement({ display, lastPowerCommand, onCommandSent }: Pr
             'disabled:opacity-40 disabled:cursor-not-allowed',
           ].join(' ')}
           title={
-            !supabaseReady ? 'Supabase not configured' :
+            !neonReady ? 'Neon database not configured' :
             inCooldown ? cooldownLeftLabel ?? 'Cooldown' :
             status === 'executing' ? 'Power command in flight' :
             'Remotely turn off this display (requires confirmation)'
@@ -204,7 +204,7 @@ export function PowerManagement({ display, lastPowerCommand, onCommandSent }: Pr
             'disabled:opacity-40 disabled:cursor-not-allowed',
           ].join(' ')}
           title={
-            !supabaseReady ? 'Supabase not configured' :
+            !neonReady ? 'Neon database not configured' :
             inCooldown ? cooldownLeftLabel ?? 'Cooldown' :
             status === 'executing' ? 'Power command in flight' :
             !isOffline ? 'Display must be offline to power on' :

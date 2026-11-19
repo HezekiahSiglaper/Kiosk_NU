@@ -1,17 +1,31 @@
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { NuMark } from './NuMark'
 
 const NAV = [
+  { to: '/portal', label: 'Content Portal' },
   { to: '/admin/displays', label: 'Displays' },
 ]
 
 export default function Shell() {
   const loc = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  const handleSignOut = async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
+
   return (
     <div className="min-h-full flex flex-col">
-      <header className="border-b border-white/10 backdrop-blur-glass bg-nu-midnight/60">
-        <div className="max-w-7xl mx-auto px-8 py-5 flex items-center gap-8">
-          <Link to="/admin/displays" className="flex items-center gap-3">
+      <header className="border-b border-white/10 bg-nu-midnight/95">
+        <div className="max-w-7xl mx-auto px-8 py-5 flex flex-wrap items-center gap-6">
+          <Link to="/portal" className="flex items-center gap-3">
             <NuMark size={32} />
             <div className="leading-tight">
               <div className="font-serif text-[18px] text-nu-wisp leading-none">
@@ -41,12 +55,29 @@ export default function Shell() {
               )
             })}
           </nav>
+
+          {/* Authenticated User Pill + Sign Out */}
           <div className="ml-auto flex items-center gap-3">
-            <span className="nu-pill">
-              <span className="w-1.5 h-1.5 rounded-full bg-nu-leaf animate-pulse" />
-              Live
-            </span>
-            <span className="text-[12px] text-nu-skylight">v0.2</span>
+            <div className="hidden sm:flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/[0.05] border border-white/15">
+              <span className="w-2 h-2 rounded-full bg-nu-leaf" />
+              <div className="text-xs leading-tight">
+                <span className="font-semibold text-nu-wisp">{user.full_name}</span>
+                <span className="text-nu-skylight ml-1.5">
+                  ·{' '}
+                  {user.role === 'super_admin'
+                    ? 'Super Admin (10 Kiosks)'
+                    : `Owner (${user.assigned_displays.length} Kiosk${user.assigned_displays.length === 1 ? '' : 's'})`}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-white/[0.06] hover:bg-white/15 text-nu-skylight hover:text-nu-wisp border border-white/15 transition-colors"
+            >
+              Switch Account / Sign Out
+            </button>
           </div>
         </div>
       </header>
@@ -55,7 +86,7 @@ export default function Shell() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-white/10 bg-nu-midnight/60 backdrop-blur-glass">
+      <footer className="border-t border-white/10 bg-nu-midnight/95">
         <div className="max-w-7xl mx-auto px-8 py-4 flex items-center justify-between text-[12px] text-nu-skylight">
           <span>Northwest University · Campus Digital Signage</span>
           <span>Kirkland, Washington · Since 1934</span>

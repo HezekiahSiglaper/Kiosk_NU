@@ -12,7 +12,7 @@ import {
 } from './icons'
 import { sendCommand } from '../services/commands'
 import { logEvent } from '../services/events'
-import { isSupabaseConfigured } from '../services/supabase'
+import { isNeonConfigured } from '../services/neon'
 import { useState, useMemo, useEffect, type ReactNode } from 'react'
 
 type Props = {
@@ -46,12 +46,12 @@ function timeAgo(iso: string | null): string {
  * admins out in that window, we treat `undefined`, `'online'` and
  * `'checking'` as commandable. `'offline'` is the only blocking state.
  *
- * Important: Go Home is ALWAYS commandable when Supabase is configured,
+ * Important: Go Home is ALWAYS commandable when Neon is configured,
  * even if the display is offline. This is the universal recovery
  * command — it must reach the kiosk the moment it reconnects.
  */
-function isCommandable(display: Display, supabaseReady: boolean): boolean {
-  if (!supabaseReady) return false
+function isCommandable(display: Display, neonReady: boolean): boolean {
+  if (!neonReady) return false
   if (display.status === 'offline') return false
   return true
 }
@@ -69,8 +69,8 @@ export function DisplayCard({ display, commands }: Props) {
     power_on: 'idle',
   })
   const [cmdError, setCmdError] = useState<string | null>(null)
-  const supabaseReady = isSupabaseConfigured()
-  const commandable = isCommandable(display, supabaseReady)
+  const neonReady = isNeonConfigured()
+  const commandable = isCommandable(display, neonReady)
 
   const blackoutActive = Boolean(display.is_blackout)
   const emergencyActive = Boolean(display.emergency_message)
@@ -111,8 +111,8 @@ export function DisplayCard({ display, commands }: Props) {
   }, [latestForCmd])
 
   async function onCommand(cmd: CommandName, label: string) {
-    if (!supabaseReady) {
-      window.alert('Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env to enable commands.')
+    if (!neonReady) {
+      window.alert('Neon database not configured. Set DATABASE_URL in .env to enable commands.')
       return
     }
     if (busyCmd) return // already sending another command
@@ -143,7 +143,7 @@ export function DisplayCard({ display, commands }: Props) {
       const inserted = await sendCommand(display.id, cmd)
       if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
-        console.log('[command] supabase insert ok', { id: inserted.id, command: cmd })
+        console.log('[command] neon insert ok', { id: inserted.id, command: cmd })
       }
       setCmdState((s) => ({ ...s, [cmd]: 'queued' }))
       await logEvent('command_sent', {
@@ -154,7 +154,7 @@ export function DisplayCard({ display, commands }: Props) {
       const msg = err instanceof Error ? err.message : 'Failed to send command'
       if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
-        console.error('[command] supabase insert failed', { command: cmd, error: msg })
+        console.error('[command] neon insert failed', { command: cmd, error: msg })
       }
       setCmdState((s) => ({ ...s, [cmd]: 'error' }))
       setCmdError(msg)
@@ -170,9 +170,8 @@ export function DisplayCard({ display, commands }: Props) {
 
   // Build the props for each button (DRY)
   function btnProps(cmd: CommandName, label: string) {
-    // Go Home is ALWAYS clickable (recovery) — except during a
-    // Supabase insert in flight or when Supabase isn't configured.
-    const blocked = cmd === 'go_home' ? !supabaseReady : !commandable
+    // Go Home is ALWAYS clickable (recovery) — except when Neon isn't configured.
+    const blocked = cmd === 'go_home' ? !neonReady : !commandable
     const busy = busyCmd === cmd
     const state = cmdState[cmd]
     const disabled = blocked || busy

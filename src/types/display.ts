@@ -1,5 +1,5 @@
 /**
- * Mirror of the `public.displays` table in Supabase.
+ * Mirror of the `public.displays` table in Neon Postgres (`1-schema.sql`).
  * One row per physical kiosk. Optional fields are nullable until Phase 3
  * (the display client itself) starts writing heartbeats.
  */
@@ -59,9 +59,7 @@ export const EMPTY_DISPLAY_FORM: DisplayFormData = {
 }
 
 /**
- * Empty roster shown while the first Supabase query is in flight.
- * The dashboard will populate this as soon as Realtime delivers the seed
- * rows. We never hardcode the four production displays here — those live
- * in supabase/migrations/002_seed.sql so the operations center is data-driven.
+ * Empty roster shown while the first Neon Postgres query is in flight.
+ * Seed displays live in `2-sample-data.sql` so the operations center is data-driven.
  */
 export const EMPTY_ROSTER: Display[] = []

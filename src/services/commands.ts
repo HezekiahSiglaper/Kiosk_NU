@@ -1,53 +1,49 @@
-import { getSupabase } from './supabase'
+import { callPortalApi, isNeonConfigured } from './neon'
 import type { CommandType, DisplayCommand } from '../types/command'
 
-/** Fetches the most recent N commands across all displays (for the history panel). */
+/** Fetches the most recent N commands across all displays from Neon Postgres. */
 export async function fetchRecentCommands(limit = 30): Promise<DisplayCommand[]> {
-  const sb = getSupabase()
-  if (!sb) return []
-  const { data, error } = await sb
-    .from('display_commands')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-  if (error) {
-    console.warn('fetchRecentCommands error', error)
-    return []
-  }
-  return (data ?? []) as DisplayCommand[]
+  if (!isNeonConfigured()) return []
+  const rows = await callPortalApi<DisplayCommand[]>({
+    action: 'list_commands',
+    limit,
+  })
+  return rows ?? []
 }
 
 /**
- * Insert a new command for a display. Returns the inserted command.
- * Phase 3 will have display clients subscribe to display_commands and
- * execute them; for now this just queues them in the database.
+ * Insert a new command for a display into Neon Postgres. Returns the inserted command.
  */
 export async function sendCommand(
   displayId: string,
   command: CommandType,
   payload: Record<string, unknown> = {},
 ): Promise<DisplayCommand> {
+  if (isNeonConfigured()) {
+    const created = await callPortalApi<DisplayCommand>({
+      action: 'send_command',
+      display_id: displayId,
+      command,
+      payload,
+    })
+    if (created) {
+      window.dispatchEvent(new CustomEvent('nu-commands-updated'))
+      return created
+    }
+  }
+
   const res = await fetch('/api/command', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify({ display_id: displayId, command, payload }),
   })
-  if (res.ok) return (await res.json()) as DisplayCommand
-
-  // Vite dev has no /api folder; fall back to the anon client locally.
-  if (res.status === 404) {
-    const sb = getSupabase()
-    if (!sb) throw new Error('Supabase not configured')
-    const { data, error } = await sb
-      .from('display_commands')
-      .insert({ display_id: displayId, command, payload })
-      .select('*')
-      .single()
-    if (error) throw error
-    return data as DisplayCommand
+  if (res.ok) {
+    const data = (await res.json()) as DisplayCommand
+    window.dispatchEvent(new CustomEvent('nu-commands-updated'))
+    return data
   }
 
   const err = await res.json().catch(() => ({ error: res.statusText }))
-  throw new Error(err.error || 'Command failed')
+  throw new Error(err.error || 'Neon database not configured')
 }
